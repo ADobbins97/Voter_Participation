@@ -1,0 +1,211 @@
+---
+title: "Problem Set 4"
+author: "Alexandra Dobbins"
+date: "2/25/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(gt)
+library(dplyr)
+library(fivethirtyeight)
+library(ggplot2)
+
+#Eliminates warning messages about varaibles being character/numeral, etc. 
+nc09 <- read_csv(file = "ps_4_elections-poll-nc09-3_copy.csv", 
+                  col_types =  cols(
+                   .default = col_character(),
+                   turnout_scale = col_double(),
+                   turnout_score = col_double(),
+                   w_LV = col_double(),
+                   w_RV = col_double(),
+                   final_weight = col_double(),
+                   timestamp = col_datetime(format = "")))
+
+```
+
+
+```{r question 1}
+
+#Question 1
+
+#Initial cleaning of data to use for future calculations
+nc_09 <-
+  nc09 %>% 
+  #isoalte variables of interest for question 1
+    select(response, race_eth, final_weight) %>%
+  #group by reponse and race to make data neat
+    group_by(response, race_eth) %>% 
+  #calcualte sum of all the weights of voters 
+    summarize(total = sum(final_weight)) %>% 
+  #remove non-responsive data points from ethnicity varaible
+    filter(race_eth != "[DO NOT READ] Don't know/Refused") %>%
+  #spread by response to create columns for each response category
+    spread(key = response, value = total) %>% 
+  #one of the Asian responses contained an NA, so change it to 0 so data remains in set
+    replace_na(list(Und = 0)) %>% 
+  #create varaible all and recrate Dem, Rep, and Und to represent percentage of only those three categories 
+    mutate(all = Dem + Rep + Und) %>% 
+      mutate(Dem = Dem/all) %>% 
+      mutate(Rep = Rep/all) %>% 
+      mutate(Und = Und/all) %>% 
+    select(race_eth, Dem, Rep, Und) %>% 
+  #ungroup so mutations can be done
+    ungroup() %>% 
+  #manually choose order of race varaibles for chart
+    mutate(race_eth = fct_relevel(race_eth, "White", "Black", "Hispanic", "Asian", "Other")) %>% 
+    arrange(race_eth) 
+
+#Mad Libs
+
+
+Dem_Support <- 
+  #Count number of people who reponded Democrat, print only the numeric value in n column
+  nc09 %>% 
+  filter(response == "Dem") %>% 
+  nrow()
+
+RepCount <- nc09 %>% 
+  #Count number of people who reponded Republican, print only the numeric value in n column
+  filter(response == "Rep") %>% 
+  nrow()
+
+UndCount <- nc09 %>% 
+  #Count number of people who reponded Und, print only the numeric value in n column
+  filter(response == "Und") %>% 
+  nrow()
+
+GenderDiff <- 
+  nc09 %>%
+  #Select the two columns of interest
+  select(gender, gender_combined) %>% 
+  #filter for columns where the inputs are unequal
+  filter(gender != gender_combined) %>% 
+  #print numeric count value of n column
+  nrow()
+
+White <-
+  nc09 %>% 
+  #Select the two columns of interest
+  select(race_eth, file_race_black) %>% 
+  #filter for columns where the input is race_eth is With, then columns where inputs are unequal
+  filter(race_eth == "White", race_eth != file_race_black) %>%
+  #print numeric count value of n column
+  nrow()
+  
+#Create two variables (to be subtracted) which select for the first Dem timestamp, and first Rep timestamp
+dem_time <- nc09 %>% filter(response == "Dem") %>%  slice(1) %>%  pull(timestamp)
+rep_time <- nc09 %>% filter(response == "Rep") %>%  slice(1) %>%  pull(timestamp)
+
+```
+
+**Question 1:**
+
+There were `r Dem_Support` respondents who supported the Democratic candidate.
+
+There were `r RepCount - UndCount` more respondents who favored the Republican candidate than who were Undecided.
+
+There are two gender variables `gender` and `gender_combined`. There are `r GenderDiff` individuals for whom these variables have different values.
+
+There are `r White` respondents listed as "White" under `race_eth` who are not listed as "White" under `file_race_black`.
+
+The first response of Rep came `r round(rep_time - dem_time)` minutes (rounded to the nearest minute) before the first response of Dem.
+
+
+
+**Question 2:**
+
+```{r}
+#Question 2
+
+nc_09 %>% 
+  #use gt() to create a chart
+  gt() %>% 
+  #name chart
+  tab_header(title = "North Carolina's 9th Congressional District Voting Distribution by Race and Party")%>% 
+  #rename column variables to match target chart
+  cols_label(
+    #I think there needed to be a label on the ethnicity column 
+    race_eth = "Ethnicity",
+    Dem = "DEM.",
+    Rep = "REP.",
+    Und = "UND."
+    ) %>%
+  #transform data points to percentages with no decimal points
+  fmt_percent(columns = vars(Dem, Rep, Und), decimals = 0) %>% 
+  #replace NA with a dash for Asian x Und
+  na_if(0) %>% 
+  fmt_missing(columns = vars(Und), rows = 4)
+
+```
+
+
+
+**Question 3:**
+
+```{r}
+#Question 3
+
+nc_educ <-
+  nc09 %>% 
+  #select for relevant variables
+    select(educ, final_weight) %>%
+  #remove people who did not respond to educ column
+    filter(educ != "[DO NOT READ] Refused") %>%
+  #manually choose order of varaibles on graph
+    mutate(educ = fct_relevel(educ, "Grade school", "High school", "Some college or trade school", "Bachelors' degree", "Graduate or Professional Degree"))
+
+nc_educ %>% 
+  #create a ggplot of voter weight by education 
+  ggplot(aes(x = educ, y = final_weight)) +
+  #violin plot to show densities of count
+  geom_violin()+
+  #flip axis so labels can be read/match target plot
+  coord_flip()+
+  #add in dots to represent actual data points, with width, shade, and size adjusted to match target plot
+  geom_jitter(aes(x = educ, y = final_weight), width = .24, size = 1, alpha = .5)+
+  #name plot
+  labs(title = "More Educated Matter Less in North Carolina 9th", subtitle = "Poll gives more weight to people who are less likely to participate in polls", caption = "New York Times Upshot/Siena College 2018 live polls")+
+  #name x and y variables
+  ylab("Weight Given to Respondent in Calculating Poll Results")+
+  xlab("")
+
+```
+
+Question 4:
+
+```{r }
+
+#Question 4
+
+q4_graph <-
+  nc09 %>% 
+  #select for relevant varaibles to look at how education effects people's intentions of voting
+  select(educ, likely) %>% 
+  #filter out repondants in educ and likely categories who did not respond 
+  filter(educ != "[DO NOT READ] Refused", likely != "[DO NOT READ] Don't know/Refused") %>%
+  #manually choose order of varaibles for fill 
+  mutate(educ = fct_relevel(educ, "Grade school", "High school", "Some college or trade school", "Bachelors' degree", "Graduate or Professional Degree")) %>% 
+  #manually choose order of varaibles on graph
+  mutate(likely = fct_relevel(likely, "Not at all likely", "Not very likely","Somewhat likely", "Very likely", "Almost certain", "Already voted"))
+
+
+q4_graph %>% 
+  ggplot() +
+  #create bar plot with likihood of voting on x axis and colored to represent education level. alpha lowered to .5 to make bars a little transparent and pretty
+  geom_bar(mapping = aes(x = likely, fill = educ), alpha = .7)+
+  #flip so labels can be read
+  coord_flip()+
+  #rename axis
+  ylab("Citizens (number)")+
+  xlab("Self-Reported Odds of Voting")+
+  #name chart
+  labs(title = "Self-Reported Odds of Voter Participation with Respect to Education", 
+       subtitle = "An exploration of education's effects on political participation")+
+  #write directly on graph to point out interesting response which Kieran Healy would like very much 
+  annotate(geom = "text", x = .85, y = 90, size = 2.5, label = "<- Surprisingly honest feedback about voting intentions")
+
+```
